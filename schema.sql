@@ -119,6 +119,9 @@ CREATE TABLE finished_job (
 ) PARTITION BY RANGE (outcome, start_time);
 
 
+-- Create a default partition for local development.
+CREATE TABLE finished_job_default PARTITION OF finished_job DEFAULT;
+
 -- Here's an example partition.
 CREATE TABLE successful_job_20240718 PARTITION OF finished_job FOR VALUES FROM ('SUCCEEDED', '2024-07-18') TO ('SUCCEEDED', '2024-07-19');
 
