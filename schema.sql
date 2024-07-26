@@ -90,6 +90,8 @@ CREATE TABLE queued_job (
   PRIMARY KEY (queue, position)
 );
 
+CREATE UNIQUE INDEX ON queued_job (job_id);
+
 -- This keeps track of jobs that are currently executing. It needs to be designed in a
 -- way that preserves HOT updates, so avoid mutable fields with non-summary indexes.
 CREATE TABLE running_job (

@@ -96,7 +96,46 @@ async def process_one_job(conn, worker_id):
                 )
                 # Do any bookkeeping necessary
                 #   If the job is blocking anything else, move those to running_job
+                await cur.execute(
+                    """
+                    DELETE FROM blocked_job WHERE blocking_job_id = %s RETURNING job_id
+                    """,
+                    params=(job.id,)
+                )
+                blocked_job_ids = await cur.fetchmany()
+                if blocked_job_ids:
+                    await cur.executemany(
+                        """
+                        INSERT INTO running_job (job_id, attempt, state)
+                        VALUES (%s, 1, 'ENQUEUED')
+                        """,
+                        params_seq=blocked_job_ids
+                    )
                 #   If the job came from a queue, see if there is a next job to pull into running_job
+                if job.queue:
+                    await cur.execute(
+                        """
+                        DELETE FROM queued_job WHERE job_id = %s RETURNING position
+                        """
+                    )
+                    position = cur.fetchone()[0]
+                    # See if there is another job in the queue and start it
+                    await cur.execute(
+                        """
+                        SELECT job_id FROM queued_job WHERE queue = %s AND position = %s
+                        """,
+                        params=(job.queue, position + 1)
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        job_id = row[0]
+                        await cur.execute(
+                            """
+                            INSERT INTO running_job (job_id, attempt, state)
+                            VALUES (%s, 1, 'ENQUEUED')
+                            """,
+                            params=(job_id,)
+                        )
         print("Finished job")
 
 

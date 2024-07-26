@@ -91,13 +91,23 @@ async def enqueue(conn: psycopg.AsyncConnection, job: JobDescription) -> UUID:
                     """SELECT max(position) || 0 FROM queued_job WHERE queue = %s""",
                     params=(job.queue)
                 )
-                position = await cur.fetchone()[0]
+                last_position = await cur.fetchone()[0]
+                position = last_position + 1
                 await cur.execute(
                     """
                     INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s)
                     """,
                     params=(job.queue, position, job_id)
                 )
+                if position == 1:
+                    # This is the first job in the queue, so start it running
+                    await cur.execute(
+                        """
+                        INSERT INTO running_job (job_id, attempt, state)
+                        VALUES (%s, 1, 'ENQUEUED')
+                        """,
+                        params=(job_id,)
+                    )
             else:
                 await cur.execute(
                     """
