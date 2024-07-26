@@ -74,10 +74,34 @@ async def process_one_job(conn, worker_id):
         print(f"Invoking {job}")
         finish_time = datetime.now(timezone.utc)
     except:
+        finish_time = datetime.now(timezone.utc)
         print("Job failed")
-        # Create a new attempt if not exceeding max_attempts
-        # Insert this one into finished_job
-        pass
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM running_job WHERE job_id = %s
+                    """,
+                    params=(job.id,)
+                )
+                await cur.execute(
+                    """
+                    INSERT INTO finished_job (job_id, attempt, outcome, start_time, finish_time, result)
+                    VALUES (%s, %s, 'FAILED', %s, %s, NULL)
+                    """,
+                    params=(job.id, job.attempt, start_time, finish_time)
+                )
+
+                # Create a new attempt if not exceeding max_attempts
+                next_attempt = job.attempt + 1
+                if next_attempt <= job.max_attempts:
+                    await cur.execute(
+                        """
+                        INSERT INTO running_job (job_id, attempt, state)
+                        VALUES (%s, %s, 'ENQUEUED')
+                        """,
+                        params=(job_id, next_attempt)
+                    )
     else:
         async with conn.transaction():
             async with conn.cursor() as cur:
