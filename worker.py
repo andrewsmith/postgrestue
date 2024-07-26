@@ -163,13 +163,6 @@ async def process_one_job(conn, worker_id):
         print("Finished job")
 
 
-async def move_scheduled_jobs_to_running(conn):
-    while True:
-        # Select all jobs that have a scheduled start time earlier than now
-        # Move them in batches to running_job
-        pass
-
-
 async def register_worker(conn, worker_id, hostname):
     print("Registering")
     async with conn.cursor() as cur:
@@ -208,7 +201,6 @@ async def main(args):
     async with await psycopg.AsyncConnection.connect(database_url) as conn:
         await register_worker(conn, worker_id, hostname)
 
-        # Start move_scheduled_jobs_to_running
         # Loop through processing jobs
         await process_one_job(conn, worker_id)
 
