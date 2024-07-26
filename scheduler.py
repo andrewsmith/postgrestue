@@ -2,10 +2,14 @@
 
 import asyncio
 from datetime import datetime, timezone
+import logging
 import os
 import sys
 
 import psycopg
+
+
+logger = logging.getLogger(__name__)
 
 
 async def move_scheduled_jobs_to_running(conn):
@@ -26,11 +30,14 @@ async def move_scheduled_jobs_to_running(conn):
                     """,
                     params_seq=scheduled_jobs
                 )
+                logger.info("Marked %s jobs as ready to run", len(scheduled_jobs))
         await asyncio.sleep(5)
 
 
 async def main(args):
-    print("Starting scheduler...")
+    logging.basicConfig(level=logging.DEBUG)
+
+    logger.info("Starting scheduler...")
 
     # Set up a connection
     try:

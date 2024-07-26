@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 import os
 import socket
 import sys
@@ -12,6 +13,9 @@ from uuid import UUID, uuid1
 
 import psycopg
 from psycopg.rows import class_row
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,7 +41,7 @@ def validate(job: JobDescription):
 
 async def enqueue(conn: psycopg.AsyncConnection, job: JobDescription) -> UUID:
     validate(job)
-    print("Enqueuing", job)
+    logger.info("Enqueuing %s", job)
     async with conn.transaction():
         async with conn.cursor() as cur:
             job_id = uuid1()
@@ -120,7 +124,9 @@ async def enqueue(conn: psycopg.AsyncConnection, job: JobDescription) -> UUID:
 
 
 async def main(args):
-    print("Enqueuing a job...")
+    logging.basicConfig(level=logging.DEBUG)
+
+    logger.info("Enqueuing a job...")
     owner_id = uuid1()
 
     # Set up a connection

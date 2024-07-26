@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 import os
 import socket
 import sys
@@ -12,6 +13,9 @@ from uuid import UUID, uuid1
 
 import psycopg
 from psycopg.rows import class_row
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,7 +31,7 @@ class Job:
 
 
 async def process_one_job(conn, worker_id):
-    print("Looking for a job to process")
+    logger.debug("Looking for a job to process")
     async with conn.transaction():
         async with conn.cursor(row_factory=class_row(Job)) as cur:
             # Select a job to process
@@ -52,7 +56,7 @@ async def process_one_job(conn, worker_id):
                 """)
             job = await cur.fetchone()
             if not job:
-                print("No available jobs found")
+                logger.debug("No available jobs found")
                 return False
 
             # Mark the job as being processed by this worker
@@ -71,11 +75,11 @@ async def process_one_job(conn, worker_id):
             )
     try:
         # Invoke it
-        print(f"Invoking {job}")
+        logger.info("Invoking %s", job)
         finish_time = datetime.now(timezone.utc)
-    except:
+    except Exception as e:
         finish_time = datetime.now(timezone.utc)
-        print("Job failed")
+        logger.execption("Job failed: #{e}")
         async with conn.transaction():
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -160,12 +164,12 @@ async def process_one_job(conn, worker_id):
                             """,
                             params=(job_id,)
                         )
-        print("Finished job")
+        logger.info("Finished job %s", job.id)
     return True
 
 
 async def register_worker(conn, worker_id, hostname):
-    print("Registering")
+    logger.debug("Registering")
     async with conn.cursor() as cur:
         await cur.execute(
             """
@@ -179,7 +183,7 @@ async def register_worker(conn, worker_id, hostname):
 
 
 async def deregister_worker(conn, worker_id):
-    print("De-registering")
+    logger.debug("De-registering")
     async with conn.cursor() as cur:
         await cur.execute(
             """
@@ -190,9 +194,11 @@ async def deregister_worker(conn, worker_id):
 
 
 async def main(args):
-    print("Starting worker...")
+    logging.basicConfig(level=logging.DEBUG)
+
     worker_id = uuid1()
     hostname = socket.getfqdn()
+    logger.info("Starting worker %s on %s...", worker_id, hostname)
 
     # Set up a connection
     try:
