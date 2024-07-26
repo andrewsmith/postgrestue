@@ -161,6 +161,7 @@ async def process_one_job(conn, worker_id):
                             params=(job_id,)
                         )
         print("Finished job")
+    return True
 
 
 async def register_worker(conn, worker_id, hostname):
@@ -202,7 +203,13 @@ async def main(args):
         await register_worker(conn, worker_id, hostname)
 
         # Loop through processing jobs
-        await process_one_job(conn, worker_id)
+        while True:
+            for delay in [0.25, 0.5, 1, 2, 4, 8, 16, 32]:
+                did_dequeue_job = await process_one_job(conn, worker_id)
+                if did_dequeue_job:
+                    break
+                else:
+                    await asyncio.sleep(delay)
 
         await deregister_worker(conn, worker_id)
 
