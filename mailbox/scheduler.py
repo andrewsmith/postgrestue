@@ -3,10 +3,9 @@
 import asyncio
 from datetime import datetime, timezone
 import logging
-import os
 import sys
 
-import psycopg
+from .common import get_connection
 
 
 logger = logging.getLogger(__name__)
@@ -39,13 +38,7 @@ async def main(args):
 
     logger.info("Starting scheduler...")
 
-    # Set up a connection
-    try:
-        database_url = os.environ["DATABASE_URL"]
-    except KeyError:
-        raise RuntimeError("DATABASE_URL is not set")
-
-    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+    async with await get_connection() as conn:
         await move_scheduled_jobs_to_running(conn)
 
 

@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 import logging
-import os
 import socket
 import sys
 from typing import Optional
 from uuid import UUID, uuid1
 
-import psycopg
 from psycopg.rows import class_row
+
+from .common import get_connection
 
 
 logger = logging.getLogger(__name__)
@@ -201,11 +201,7 @@ async def main(args):
     logger.info("Starting worker %s on %s...", worker_id, hostname)
 
     # Set up a connection
-    try:
-        database_url = os.environ["DATABASE_URL"]
-    except KeyError:
-        raise RuntimeError("DATABASE_URL is not set")
-    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+    async with await get_connection() as conn:
         await register_worker(conn, worker_id, hostname)
 
         # Loop through processing jobs
