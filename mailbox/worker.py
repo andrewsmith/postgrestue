@@ -18,6 +18,33 @@ from .common import get_connection
 logger = logging.getLogger(__name__)
 
 
+PING_FREQUENCY_SECONDS = 5
+ping_activity = False
+
+
+def mark_activity():
+    global ping_activity
+    ping_activity = True
+
+
+async def send_periodic_pings(worker_id):
+    global ping_activity
+    async with await get_connection() as conn:
+        while True:
+            if ping_activity:
+                ping_activity = False
+                async with conn.cursor() as cur:
+                    now = datetime.now(timezone.utc)
+                    logger.debug("Sending an activity ping")
+                    await cur.execute(
+                        """
+                        UPDATE worker SET last_ping_time = %s WHERE id = %s
+                        """,
+                        params=(now, worker_id)
+                    )
+            await asyncio.sleep(PING_FREQUENCY_SECONDS)
+
+
 @dataclass
 class Job:
     id: UUID
@@ -32,6 +59,7 @@ class Job:
 
 async def process_one_job(conn, worker_id):
     logger.debug("Looking for a job to process")
+    mark_activity()
     async with conn.transaction():
         async with conn.cursor(row_factory=class_row(Job)) as cur:
             # Select a job to process
@@ -200,9 +228,12 @@ async def main(args):
     hostname = socket.getfqdn()
     logger.info("Starting worker %s on %s...", worker_id, hostname)
 
+
     # Set up a connection
     async with await get_connection() as conn:
         await register_worker(conn, worker_id, hostname)
+
+        ping_task = asyncio.create_task(send_periodic_pings(worker_id))
 
         # Loop through processing jobs
         while True:
@@ -213,6 +244,7 @@ async def main(args):
                 else:
                     await asyncio.sleep(delay)
 
+        await ping_task
         await deregister_worker(conn, worker_id)
 
 
