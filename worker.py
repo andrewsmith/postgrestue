@@ -205,7 +205,7 @@ async def main(args):
         database_url = os.environ["DATABASE_URL"]
     except KeyError:
         raise RuntimeError("DATABASE_URL is not set")
-    async with await psycopg.AsyncConnection.connect(database_url) as conn:
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
         await register_worker(conn, worker_id, hostname)
 
         # Loop through processing jobs
