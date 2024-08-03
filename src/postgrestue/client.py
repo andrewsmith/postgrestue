@@ -1,4 +1,4 @@
-"""A client that can create jobs in the mailbox schema."""
+"""A client that can create jobs in the postgrestue schema."""
 
 import asyncio
 from dataclasses import dataclass

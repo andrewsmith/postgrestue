@@ -1,4 +1,4 @@
-"""An example implementation of a worker that uses the mailbox schema."""
+"""An example implementation of a worker that uses the postgrestue schema."""
 
 import asyncio
 from dataclasses import dataclass
