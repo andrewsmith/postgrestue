@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mailbox"
+authors = [
+  {name = "Andrew Smith", email = "andrew@velvet.software"}
+]
+description = "Mailbox is a prototype of a job queuing system using PostgreSQL"
+dynamic = ["version"]
+requires-python = ">=3.10"
+dependencies = [
+  "psycopg"
+]
+
+[project.optional-dependencies]
+tests = [
+  "pytest"
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "mailbox.__version__"}
