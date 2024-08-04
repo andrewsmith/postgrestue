@@ -47,6 +47,8 @@ async def send_periodic_pings(worker_id):
 
 @dataclass
 class Job:
+    """Represents a job that is currently being processed."""
+
     id: UUID
     kind: str
     arguments: dict
@@ -81,7 +83,8 @@ async def process_one_job(conn, worker_id):
                   rj.state = 'ENQUEUED'
                 LIMIT 1
                 FOR UPDATE OF rj SKIP LOCKED
-                """)
+                """
+            )
             job = await cur.fetchone()
             if not job:
                 logger.debug("No available jobs found")
@@ -102,8 +105,8 @@ async def process_one_job(conn, worker_id):
                 params=(start_time, worker_id, job.id)
             )
     try:
-        # Invoke it
         logger.info("Invoking %s", job)
+        _invoke(job)
         finish_time = datetime.now(timezone.utc)
     except Exception as e:
         finish_time = datetime.now(timezone.utc)
@@ -194,6 +197,10 @@ async def process_one_job(conn, worker_id):
                         )
         logger.info("Finished job %s", job.id)
     return True
+
+
+def _invoke(job):
+    pass
 
 
 async def register_worker(conn, worker_id, hostname):
