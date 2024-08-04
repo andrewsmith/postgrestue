@@ -46,8 +46,9 @@ async def duplicate_connection(conn: psycopg.AsyncConnection) -> psycopg.AsyncCo
 
 
 class Worker:
-    def __init__(self, conn, hostname=None, worker_id=None):
+    def __init__(self, conn, functions, hostname=None, worker_id=None):
         self.conn = conn
+        self.functions = functions
         self.worker_id = worker_id or uuid1()
         self.hostname = hostname or socket.getfqdn()
         self.ping_frequency_seconds = 5
@@ -145,7 +146,7 @@ class Worker:
                             INSERT INTO running_job (job_id, attempt, state)
                             VALUES (%s, %s, 'ENQUEUED')
                             """,
-                            params=(job_id, next_attempt)
+                            params=(job.id, next_attempt)
                         )
         else:
             async with self.conn.transaction():
@@ -209,7 +210,11 @@ class Worker:
         return True
 
     def _invoke(self, job):
-        pass
+        try:
+            function = getattr(self.functions, job.kind)
+        except AttributeError:
+            function = self.functions[job.kind]
+        function(**job.arguments)
 
     async def process_jobs(self):
         # Loop through processing jobs
@@ -256,9 +261,14 @@ class Worker:
 
 
 async def main(args):
+    def send_welcome_email(**kwargs):
+        logger.info("Calling send_welcome_email")
+
+    sample_functions = dict(send_welcome_email=send_welcome_email)
+
     logging.basicConfig(level=logging.DEBUG)
     async with await get_connection() as conn:
-        await Worker(conn).run()
+        await Worker(conn, sample_functions).run()
 
 
 if __name__ == "__main__":

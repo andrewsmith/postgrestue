@@ -139,7 +139,7 @@ async def main(args):
 
         job = JobDescription(
             owner_id,
-            'SendWelcomeEmail',
+            "send_welcome_email",
             {},
             3,
             timedelta(minutes=1),
