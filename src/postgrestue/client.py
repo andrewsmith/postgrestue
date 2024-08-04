@@ -40,72 +40,84 @@ def validate(job: JobDescription):
         raise ValueError("Only one of schedule_time, blocking_job_id, or queue may be set")
 
 
-async def enqueue(conn: psycopg.AsyncConnection, job: JobDescription) -> UUID:
-    validate(job)
-    logger.info("Enqueuing %s", job)
-    async with conn.transaction():
-        async with conn.cursor() as cur:
-            job_id = uuid1()
-            create_time = datetime.now(timezone.utc)
-            await cur.execute(
-                """
-                INSERT INTO job (
-                    id,
-                    owner_id,
-                    kind,
-                    max_attempts,
-                    timeout,
-                    create_time,
-                    schedule_time,
-                    blocking_job_id,
-                    queue,
-                    arguments
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                params=(
-                    job_id,
-                    job.owner_id,
-                    job.kind,
-                    job.max_attempts,
-                    job.timeout,
-                    create_time,
-                    job.schedule_time,
-                    job.blocking_job_id,
-                    job.queue,
-                    json.dumps(job.arguments),
-                )
-            )
-            # Figure out what sort of bookkeeping steps need to be done to get the job running.
-            if job.schedule_time:
+class Client:
+    def __init__(self, conn: psycopg.AsyncConnection):
+        self.conn = conn
+
+    async def enqueue(self, job: JobDescription) -> UUID:
+        validate(job)
+        logger.info("Enqueuing %s", job)
+        async with self.conn.transaction():
+            async with self.conn.cursor() as cur:
+                job_id = uuid1()
+                create_time = datetime.now(timezone.utc)
                 await cur.execute(
                     """
-                    INSERT INTO scheduled_job (job_id, schedule_time) VALUES (%s, %s)
+                    INSERT INTO job (
+                        id,
+                        owner_id,
+                        kind,
+                        max_attempts,
+                        timeout,
+                        create_time,
+                        schedule_time,
+                        blocking_job_id,
+                        queue,
+                        arguments
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    params=(job_id, job.schedule_time)
+                    params=(
+                        job_id,
+                        job.owner_id,
+                        job.kind,
+                        job.max_attempts,
+                        job.timeout,
+                        create_time,
+                        job.schedule_time,
+                        job.blocking_job_id,
+                        job.queue,
+                        json.dumps(job.arguments),
+                    )
                 )
-            elif job.blocking_job_id:
-                await cur.execute(
-                    """
-                    INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
-                    """,
-                    params=(job_id, job.blocking_job_id)
-                )
-            elif job.queue:
-                # TODO(andrewsmith): Come up with a better implementation of this
-                await cur.execute(
-                    """SELECT max(position) || 0 FROM queued_job WHERE queue = %s""",
-                    params=(job.queue)
-                )
-                last_position = await cur.fetchone()[0]
-                position = last_position + 1
-                await cur.execute(
-                    """
-                    INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s)
-                    """,
-                    params=(job.queue, position, job_id)
-                )
-                if position == 1:
-                    # This is the first job in the queue, so start it running
+                # Figure out what sort of bookkeeping steps need to be done to get the job running.
+                if job.schedule_time:
+                    await cur.execute(
+                        """
+                        INSERT INTO scheduled_job (job_id, schedule_time) VALUES (%s, %s)
+                        """,
+                        params=(job_id, job.schedule_time)
+                    )
+                elif job.blocking_job_id:
+                    await cur.execute(
+                        """
+                        INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
+                        """,
+                        params=(job_id, job.blocking_job_id)
+                    )
+                elif job.queue:
+                    # TODO(andrewsmith): Come up with a better implementation of this
+                    await cur.execute(
+                        """SELECT max(position) || 0 FROM queued_job WHERE queue = %s""",
+                        params=(job.queue)
+                    )
+                    last_position = await cur.fetchone()[0]
+                    position = last_position + 1
+                    await cur.execute(
+                        """
+                        INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s)
+                        """,
+                        params=(job.queue, position, job_id)
+                    )
+                    if position == 1:
+                        # This is the first job in the queue, so start it running
+                        await cur.execute(
+                            """
+                            INSERT INTO running_job (job_id, attempt, state)
+                            VALUES (%s, 1, 'ENQUEUED')
+                            """,
+                            params=(job_id,)
+                        )
+                else:
                     await cur.execute(
                         """
                         INSERT INTO running_job (job_id, attempt, state)
@@ -113,15 +125,7 @@ async def enqueue(conn: psycopg.AsyncConnection, job: JobDescription) -> UUID:
                         """,
                         params=(job_id,)
                     )
-            else:
-                await cur.execute(
-                    """
-                    INSERT INTO running_job (job_id, attempt, state)
-                    VALUES (%s, 1, 'ENQUEUED')
-                    """,
-                    params=(job_id,)
-                )
-            return job_id
+                return job_id
 
 
 async def main(args):
@@ -131,6 +135,8 @@ async def main(args):
     owner_id = uuid1()
 
     async with await get_connection() as conn:
+        client = Client(conn)
+
         job = JobDescription(
             owner_id,
             'SendWelcomeEmail',
@@ -141,7 +147,7 @@ async def main(args):
             None,
             None,
         )
-        await enqueue(conn, job)
+        await client.enqueue(job)
 
 
 if __name__ == "__main__":
