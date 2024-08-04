@@ -11,13 +11,21 @@ description = "Postgrestue is a prototype of a job queuing system using PostgreS
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
-  "psycopg"
+  "psycopg",
 ]
 
 [project.optional-dependencies]
 tests = [
-  "pytest"
+  "pytest",
+  "pytest-asyncio",
+  "pytest-postgresql",
 ]
 
 [tool.setuptools.dynamic]
 version = {attr = "postgrestue.__version__"}
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+]
+asyncio_mode = "auto"
