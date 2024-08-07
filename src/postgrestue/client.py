@@ -26,7 +26,7 @@ class JobDescription:
     arguments: dict
     max_attempts: int
     timeout: timedelta
-    schedule_time: Optional[timedelta]
+    schedule_time: Optional[datetime]
     blocking_job_id: Optional[UUID]
     queue: Optional[str]
 

@@ -15,26 +15,29 @@ class Scheduler:
     def __init__(self, conn):
         self.conn = conn
 
+    async def process_ready_jobs(self):
+        now = datetime.now(timezone.utc)
+        async with self.conn.transaction():
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM scheduled_job WHERE schedule_time <= %s RETURNING job_id
+                    """,
+                    params=(now,)
+                )
+                scheduled_jobs = await cur.fetchmany()
+                await cur.executemany(
+                    """
+                    INSERT INTO running_job (job_id, attempt, state) VALUES (%s, 1, 'ENQUEUED')
+                    """,
+                    params_seq=scheduled_jobs
+                )
+                logger.info("Marked %s jobs as ready to run", len(scheduled_jobs))
+
     async def run(self):
         logger.info("Starting scheduler...")
         while True:
-            now = datetime.now(timezone.utc)
-            async with self.conn.transaction():
-                async with self.conn.cursor() as cur:
-                    await cur.execute(
-                        """
-                        DELETE FROM scheduled_job WHERE schedule_time <= %s RETURNING job_id
-                        """,
-                        params=(now,)
-                    )
-                    scheduled_jobs = await cur.fetchmany()
-                    await cur.executemany(
-                        """
-                        INSERT INTO running_job (job_id, attempt, state) VALUES (%s, 1, 'ENQUEUED')
-                        """,
-                        params_seq=scheduled_jobs
-                    )
-                    logger.info("Marked %s jobs as ready to run", len(scheduled_jobs))
+            await self.process_ready_jobs()
             await asyncio.sleep(5)
 
 
