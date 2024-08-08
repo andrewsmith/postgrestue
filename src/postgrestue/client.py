@@ -97,14 +97,14 @@ class Client:
                 elif job.queue:
                     # TODO(andrewsmith): Come up with a better implementation of this
                     await cur.execute(
-                        """SELECT max(position) || 0 FROM queued_job WHERE queue = %s""",
-                        params=(job.queue)
+                        """SELECT coalesce(max(position), 0) FROM queued_job WHERE queue = %s""",
+                        params=(job.queue,)
                     )
-                    last_position = await cur.fetchone()[0]
+                    last_position = (await cur.fetchone())[0]
                     position = last_position + 1
                     await cur.execute(
                         """
-                        INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s)
+                        INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s, %s)
                         """,
                         params=(job.queue, position, job_id)
                     )

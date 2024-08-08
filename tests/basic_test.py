@@ -155,3 +155,52 @@ async def test_blocked_job(db):
     found_job = await worker.process_one_job()
     assert found_job
     say_hello_mock.assert_called_once_with(**arguments2)
+
+
+async def test_fifo_job(db):
+    client = Client(db)
+
+    owner_id = uuid1()
+    arguments1 = dict(name="First")
+    description1 = JobDescription(
+        owner_id,
+        "say_hello",
+        arguments1,
+        1,
+        timedelta(minutes=1),
+        None,
+        None,
+        "queue",
+    )
+    job_id1 = await client.enqueue(description1)
+    assert job_id1
+
+    arguments2 = dict(name="Second")
+    description2 = JobDescription(
+        owner_id,
+        "say_hello",
+        arguments2,
+        1,
+        timedelta(minutes=1),
+        None,
+        None,
+        "queue",
+    )
+    job_id2 = await client.enqueue(description2)
+    assert job_id2
+
+    # Run the worker with a mock
+    say_hello_mock = Mock()
+    functions = dict(say_hello=say_hello_mock)
+    worker = Worker(db, functions)
+
+    # See that the first job is run correctly
+    found_job = await worker.process_one_job()
+    assert found_job
+    say_hello_mock.assert_called_once_with(**arguments1)
+    say_hello_mock.reset_mock()
+
+    # See that the second job is run correctly
+    found_job = await worker.process_one_job()
+    assert found_job
+    say_hello_mock.assert_called_once_with(**arguments2)

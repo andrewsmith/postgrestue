@@ -186,9 +186,10 @@ class Worker:
                         await cur.execute(
                             """
                             DELETE FROM queued_job WHERE job_id = %s RETURNING position
-                            """
+                            """,
+                            params=(job.id,)
                         )
-                        position = cur.fetchone()[0]
+                        position = (await cur.fetchone())[0]
                         # See if there is another job in the queue and start it
                         await cur.execute(
                             """
