@@ -12,6 +12,9 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
   "psycopg",
+  "psycopg_pool",
+  "starlette",
+  "hypercorn",
 ]
 
 [project.optional-dependencies]
