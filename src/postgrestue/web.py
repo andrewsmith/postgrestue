@@ -4,12 +4,15 @@ import contextlib
 from datetime import timedelta
 from uuid import uuid1
 
+import prometheus_client
 from psycopg_pool import AsyncConnectionPool
 import psycopg
 from starlette.applications import Starlette
 from starlette.config import Config
+from starlette.middleware import Middleware
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette_prometheus import PrometheusMiddleware
 
 from postgrestue.client import Client, JobDescription
 
@@ -57,11 +60,18 @@ async def register(request):
         return JSONResponse({"job_id": str(job_id)})
 
 
+prometheus_metrics_app = prometheus_client.make_asgi_app()
+
+
 app = Starlette(
     routes = [
         Route("/", index),
         Route("/health", health),
-        Route("/register", register, methods=["POST"])
+        Mount("/metrics", app=prometheus_metrics_app),
+        Route("/register", register, methods=["POST"]),
+    ],
+    middleware = [
+        Middleware(PrometheusMiddleware),
     ],
     lifespan=lifespan,
 )

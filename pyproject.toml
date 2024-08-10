@@ -14,8 +14,10 @@ dependencies = [
   "psycopg",
   "psycopg_pool",
   "starlette",
+  "starlette-prometheus",
   "hypercorn",
   "locust",
+  "prometheus-client",
 ]
 
 [project.optional-dependencies]
