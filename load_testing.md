@@ -40,3 +40,13 @@ My first change was to increase the connection pool size from max=10 to max=20.
 My hypothesis is that requests might be waiting on connections to become
 available before they could be processed. However, upon running with this, I see
 no improvement at 16 users.
+
+Round #3
+--------
+I switched to using 4 workers with hypercorn. This got to an improved new best
+result at:
+* 16 concurrent users
+* Throughput peaking at ~3200 RPS and averaging above 3000 RPS
+* p95 response time of 6ms
+
+I was hitting higher >90% CPU for the load generator process.
