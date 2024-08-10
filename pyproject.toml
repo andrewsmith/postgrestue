@@ -15,6 +15,7 @@ dependencies = [
   "psycopg_pool",
   "starlette",
   "hypercorn",
+  "locust",
 ]
 
 [project.optional-dependencies]
