@@ -33,3 +33,10 @@ and response times climbed.
 This seems like a decent starting point, but I imagine there's a fair bit more
 performance on the table. In particular, I don't seem to be saturating CPU usage
 when doing these runs.
+
+Round #2
+--------
+My first change was to increase the connection pool size from max=10 to max=20.
+My hypothesis is that requests might be waiting on connections to become
+available before they could be processed. However, upon running with this, I see
+no improvement at 16 users.
