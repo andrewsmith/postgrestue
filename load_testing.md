@@ -50,3 +50,11 @@ result at:
 * p95 response time of 6ms
 
 I was hitting higher >90% CPU for the load generator process.
+
+Round #4
+--------
+I switched from `HttpUser` to `FastHttpUser` in Locust and saw a noteable
+improvement:
+* 16 concurrent users
+* Throughput steady around 4800 RPS
+* p95 response time of 5ms

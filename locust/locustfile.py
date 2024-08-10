@@ -1,7 +1,7 @@
-from locust import HttpUser, task
+from locust import FastHttpUser, task
 
 
-class RegisterUser(HttpUser):
+class RegisterUser(FastHttpUser):
     @task
     def register(self):
         self.client.post("/register", json={"name": "Andrew"})
