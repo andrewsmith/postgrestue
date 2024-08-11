@@ -49,6 +49,23 @@ jobs_failed = Counter(
     ["kind"],
 )
 
+jobs_retried = Counter(
+    "postgrestue_jobs_retried",
+    "Number of jobs that are to be retried by kind",
+    ["kind"],
+)
+
+jobs_unblocked = Counter(
+    "postgrestue_jobs_unblocked",
+    "Number of jobs unblocked",
+)
+
+jobs_unfifoed = Counter(
+    "postgrestue_jobs_unfifoed",
+    "Number of jobs moved from a FIFO queue to be run",
+    ["queue"],
+)
+
 
 @dataclass
 class Job:
@@ -182,6 +199,7 @@ class Worker:
                             """,
                             params=(job.id, next_attempt)
                         )
+                        jobs_retried.labels(job.kind).inc()
         else:
             async with self.conn.transaction():
                 async with self.conn.cursor() as cur:
@@ -216,6 +234,7 @@ class Worker:
                             """,
                             params_seq=blocked_job_ids
                         )
+                        jobs_unblocked.inc(len(blocked_job_ids))
                     #   If the job came from a queue, see if there is a next job to pull into running_job
                     if job.queue:
                         await cur.execute(
@@ -242,6 +261,7 @@ class Worker:
                                 """,
                                 params=(job_id,)
                             )
+                            jobs_unfifoed.labels(job.queue).inc()
             logger.info("Finished job %s", job.id)
         return True
 
