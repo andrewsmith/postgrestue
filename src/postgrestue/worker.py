@@ -10,6 +10,8 @@ import sys
 from typing import Optional
 from uuid import UUID, uuid1
 
+import prometheus_client
+from prometheus_client import Counter, Histogram
 import psycopg
 from psycopg.rows import class_row
 
@@ -17,6 +19,35 @@ from .common import get_connection
 
 
 logger = logging.getLogger(__name__)
+
+
+jobs_dequeue_times = Histogram(
+    "postgrestue_jobs_dequeue_time_seconds",
+    "Histogram of dequeue times for jobs",
+)
+
+jobs_invocation_times = Histogram(
+    "postgrestue_jobs_invocation_time_seconds",
+    "Histogram of how long jobs take to run",
+)
+
+jobs_dequeued = Counter(
+    "postgrestue_jobs_dequeued",
+    "Number of jobs dequeued by kind",
+    ["kind"],
+)
+
+jobs_succeeded = Counter(
+    "postgrestue_jobs_succeeded",
+    "Number of jobs that suceeded by kind",
+    ["kind"],
+)
+
+jobs_failed = Counter(
+    "postgrestue_jobs_failed",
+    "Number of jobs that failed by kind",
+    ["kind"],
+)
 
 
 @dataclass
@@ -73,48 +104,50 @@ class Worker:
     async def process_one_job(self):
         logger.debug("Looking for a job to process")
         self.ping_activity = True
-        async with self.conn.transaction():
-            async with self.conn.cursor(row_factory=class_row(Job)) as cur:
-                # Select a job to process
-                await cur.execute(
-                    """
-                    SELECT
-                      j.id,
-                      j.kind,
-                      j.arguments,
-                      rj.attempt,
-                      j.max_attempts,
-                      j.timeout,
-                      j.blocking_job_id,
-                      j.queue
-                    FROM
-                      running_job rj
-                        JOIN job j ON (rj.job_id = j.id)
-                    WHERE
-                      rj.state = 'ENQUEUED'
-                    LIMIT 1
-                    FOR UPDATE OF rj SKIP LOCKED
-                    """
-                )
-                job = await cur.fetchone()
-                if not job:
-                    logger.debug("No available jobs found")
-                    return False
+        with jobs_dequeue_times.time():
+            async with self.conn.transaction():
+                async with self.conn.cursor(row_factory=class_row(Job)) as cur:
+                    # Select a job to process
+                    await cur.execute(
+                        """
+                        SELECT
+                          j.id,
+                          j.kind,
+                          j.arguments,
+                          rj.attempt,
+                          j.max_attempts,
+                          j.timeout,
+                          j.blocking_job_id,
+                          j.queue
+                        FROM
+                          running_job rj
+                            JOIN job j ON (rj.job_id = j.id)
+                        WHERE
+                          rj.state = 'ENQUEUED'
+                        LIMIT 1
+                        FOR UPDATE OF rj SKIP LOCKED
+                        """
+                    )
+                    job = await cur.fetchone()
+                    if not job:
+                        logger.debug("No available jobs found")
+                        return False
 
-                # Mark the job as being processed by this worker
-                start_time = datetime.now(timezone.utc)
-                await cur.execute(
-                    """
-                    UPDATE running_job
-                    SET
-                      start_time = %s,
-                      state = 'PROCESSING',
-                      worker_id = %s
-                    WHERE
-                      job_id = %s
-                    """,
-                    params=(start_time, self.worker_id, job.id)
-                )
+                    # Mark the job as being processed by this worker
+                    start_time = datetime.now(timezone.utc)
+                    await cur.execute(
+                        """
+                        UPDATE running_job
+                        SET
+                          start_time = %s,
+                          state = 'PROCESSING',
+                          worker_id = %s
+                        WHERE
+                          job_id = %s
+                        """,
+                        params=(start_time, self.worker_id, job.id)
+                    )
+                    jobs_dequeued.labels(job.kind).inc()
         try:
             logger.info("Invoking %s", job)
             self._invoke(job)
@@ -137,6 +170,7 @@ class Worker:
                         """,
                         params=(job.id, job.attempt, start_time, finish_time)
                     )
+                    jobs_failed.labels(job.kind).inc()
 
                     # Create a new attempt if not exceeding max_attempts
                     next_attempt = job.attempt + 1
@@ -164,6 +198,7 @@ class Worker:
                         """,
                         params=(job.id, job.attempt, start_time, finish_time)
                     )
+                    jobs_succeeded.labels(job.kind).inc()
                     # Do any bookkeeping necessary
                     #   If the job is blocking anything else, move those to running_job
                     await cur.execute(
@@ -215,7 +250,8 @@ class Worker:
             function = getattr(self.functions, job.kind)
         except AttributeError:
             function = self.functions[job.kind]
-        function(**job.arguments)
+        with jobs_invocation_times.time():
+            function(**job.arguments)
 
     async def process_jobs(self):
         # Loop through processing jobs
@@ -268,6 +304,10 @@ async def main(args):
     sample_functions = dict(send_welcome_email=send_welcome_email)
 
     logging.basicConfig(level=logging.DEBUG)
+
+    prometheus_client.start_http_server(8001)
+    logger.info("Prometheus metrics are available at http://localhost:8001/")
+
     async with await get_connection() as conn:
         await Worker(conn, sample_functions).run()
 
