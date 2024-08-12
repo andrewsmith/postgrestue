@@ -58,3 +58,9 @@ improvement:
 * 16 concurrent users
 * Throughput steady around 4800 RPS
 * p95 response time of 5ms
+
+Round #5
+--------
+I went back to `-w 1` for hypercorn and added some Prometheus metrics for
+enqueuing. I was also doing 1 user in Locust. This was yielding about 750 RPS
+with <2ms response times.
