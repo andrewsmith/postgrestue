@@ -321,7 +321,13 @@ async def main(args):
     def send_welcome_email(**kwargs):
         logger.info("Calling send_welcome_email")
 
-    sample_functions = dict(send_welcome_email=send_welcome_email)
+    def place_order(*, sku=None, quantity=None):
+        logger.info("Placed an order for %s %s", quantity, sku)
+
+    sample_functions = dict(
+        send_welcome_email=send_welcome_email,
+        place_order=place_order,
+    )
 
     logging.basicConfig(level=logging.DEBUG)
 
