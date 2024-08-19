@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import errno
 import json
 import logging
 import socket
@@ -335,8 +336,19 @@ async def main(args):
 
     logging.basicConfig(level=logging.DEBUG)
 
-    prometheus_client.start_http_server(8001)
-    logger.info("Prometheus metrics are available at http://localhost:8001/")
+    # For Prometheus, try ascending port numbers until one is available.
+    port = 8001
+    while True:
+        try:
+            prometheus_client.start_http_server(port)
+            logger.info("Prometheus metrics are available at http://localhost:%s/", port)
+        except OSError as e:
+            if e.errno == errno.EADDRINUSE:
+                port += 1
+            else:
+                raise
+        else:
+            break
 
     async with await get_connection() as conn:
         await Worker(conn, sample_functions).run()
