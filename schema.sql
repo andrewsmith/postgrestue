@@ -84,7 +84,7 @@ CREATE INDEX ON blocked_job (blocking_job_id);
 
 CREATE TABLE queued_job (
   queue varchar(255) NOT NULL,
-  position bigint NOT NULL,
+  position bigint NOT NULL GENERATED ALWAYS AS IDENTITY,
   job_id uuid NOT NULL REFERENCES job (id),
 
   PRIMARY KEY (queue, position)
@@ -101,6 +101,7 @@ CREATE TABLE running_job (
   worker_id   uuid,
   start_time  timestamptz,
   finish_time timestamptz,
+  queue       varchar(255) UNIQUE,
 
   PRIMARY KEY (job_id, attempt),
   CHECK (attempt > 0),

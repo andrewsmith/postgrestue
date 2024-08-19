@@ -109,28 +109,24 @@ class Client:
                             params=(job_id, job.blocking_job_id)
                         )
                     elif job.queue:
-                        # TODO(andrewsmith): Come up with a better implementation of this
-                        await cur.execute(
-                            """SELECT coalesce(max(position), 0) FROM queued_job WHERE queue = %s""",
-                            params=(job.queue,)
-                        )
-                        last_position = (await cur.fetchone())[0]
-                        position = last_position + 1
+                        # Keep track of this job's position relative to others in the same queue by
+                        # storing it in queued_job until it is finished.
                         await cur.execute(
                             """
-                            INSERT INTO queued_job (queue, position, job_id) VALUES (%s, %s, %s)
+                            INSERT INTO queued_job (queue, job_id) VALUES (%s, %s)
                             """,
-                            params=(job.queue, position, job_id)
+                            params=(job.queue, job_id)
                         )
-                        if position == 1:
-                            # This is the first job in the queue, so start it running
-                            await cur.execute(
-                                """
-                                INSERT INTO running_job (job_id, attempt, state)
-                                VALUES (%s, 1, 'ENQUEUED')
-                                """,
-                                params=(job_id,)
-                            )
+                        # Opportunistically try to put it in running_job. If there is another job
+                        # from the same queue in there, this will do nothing.
+                        await cur.execute(
+                            """
+                            INSERT INTO running_job (job_id, attempt, state, queue)
+                            VALUES (%s, 1, 'ENQUEUED', %s)
+                            ON CONFLICT (queue) DO NOTHING
+                            """,
+                            params=(job_id, job.queue)
+                        )
                     else:
                         await cur.execute(
                             """

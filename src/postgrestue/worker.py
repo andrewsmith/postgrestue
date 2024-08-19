@@ -194,10 +194,10 @@ class Worker:
                     if next_attempt <= job.max_attempts:
                         await cur.execute(
                             """
-                            INSERT INTO running_job (job_id, attempt, state)
-                            VALUES (%s, %s, 'ENQUEUED')
+                            INSERT INTO running_job (job_id, attempt, state, queue)
+                            VALUES (%s, %s, 'ENQUEUED', %s)
                             """,
-                            params=(job.id, next_attempt)
+                            params=(job.id, next_attempt, job.queue)
                         )
                         jobs_retried.labels(job.kind).inc()
         else:
@@ -247,19 +247,23 @@ class Worker:
                         # See if there is another job in the queue and start it
                         await cur.execute(
                             """
-                            SELECT job_id FROM queued_job WHERE queue = %s AND position = %s
+                            SELECT job_id
+                            FROM queued_job
+                            WHERE queue = %s AND position > %s
+                            ORDER BY position ASC
+                            LIMIT 1
                             """,
-                            params=(job.queue, position + 1)
+                            params=(job.queue, position)
                         )
                         row = await cur.fetchone()
                         if row:
                             job_id = row[0]
                             await cur.execute(
                                 """
-                                INSERT INTO running_job (job_id, attempt, state)
-                                VALUES (%s, 1, 'ENQUEUED')
+                                INSERT INTO running_job (job_id, attempt, state, queue)
+                                VALUES (%s, 1, 'ENQUEUED', %s)
                                 """,
-                                params=(job_id,)
+                                params=(job_id, job.queue)
                             )
                             jobs_unfifoed.labels(job.queue).inc()
             logger.info("Finished job %s", job.id)
