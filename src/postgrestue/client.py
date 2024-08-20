@@ -102,12 +102,55 @@ class Client:
                             params=(job_id, job.schedule_time)
                         )
                     elif job.blocking_job_id:
+                        # See if the blocking job is currently running. Acquire a lock on it if
+                        # it is. This prevents a race condition where the worker running it marks it
+                        # as finished but doesn't see that this transaction is adding another
+                        # blocked job on it.
                         await cur.execute(
                             """
-                            INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
+                            SELECT 1
+                            FROM running_job
+                            WHERE job_id = %s
+                            FOR SHARE
                             """,
-                            params=(job_id, job.blocking_job_id)
+                            params=(job.blocking_job_id,)
                         )
+                        blocking_job_is_running = await cur.fetchone()
+                        if not blocking_job_is_running:
+                            # If the blocking job is not running, it may have already completed.
+                            # If that is the case, this one can execute immediately.
+                            await cur.execute(
+                                """
+                                SELECT 1
+                                FROM finished_job
+                                WHERE job_id = %s AND outcome = 'SUCCEEDED'
+                                """,
+                                params=(job_id,)
+                            )
+                            blocking_job_is_finished = await cur.fetchone()
+                            if blocking_job_is_finished:
+                                await cur.execute(
+                                    """
+                                    INSERT INTO running_job (job_id, attempt, state)
+                                    VALUES (%s, 1, 'ENQUEUED')
+                                    """,
+                                    params=(job_id,)
+                                )
+                            else:
+                                await cur.execute(
+                                    """
+                                    INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
+                                    """,
+                                    params=(job_id, job.blocking_job_id)
+                                )
+                        else:
+                            # The blocking job is currently running. Record that it is blocked.
+                            await cur.execute(
+                                """
+                                INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
+                                """,
+                                params=(job_id, job.blocking_job_id)
+                            )
                     elif job.queue:
                         # Keep track of this job's position relative to others in the same queue by
                         # storing it in queued_job until it is finished.
