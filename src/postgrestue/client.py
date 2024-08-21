@@ -31,6 +31,11 @@ jobs_enqueue_times = Histogram(
     "Histogram of enqueue times for jobs",
 )
 
+jobs_immediately_run_blocked = Counter(
+    "postgrestue_jobs_immediately_run_blocked",
+    "Blocked jobs which can be run immediately because the blocking job has already finished",
+)
+
 
 @dataclass
 class JobDescription:
@@ -136,6 +141,7 @@ class Client:
                                     """,
                                     params=(job_id,)
                                 )
+                                jobs_immediately_run_blocked.inc()
                             else:
                                 await cur.execute(
                                     """
