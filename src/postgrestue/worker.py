@@ -329,9 +329,13 @@ async def main(args):
     def place_order(*, sku=None, quantity=None):
         logger.info("Placed an order for %s %s", quantity, sku)
 
+    def message(*, message=None):
+        logger.info("Message is: %s", message)
+
     sample_functions = dict(
         send_welcome_email=send_welcome_email,
         place_order=place_order,
+        message=message,
     )
 
     logging.basicConfig(level=logging.DEBUG)

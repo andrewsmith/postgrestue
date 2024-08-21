@@ -2,7 +2,7 @@
 
 import contextlib
 from datetime import timedelta
-from uuid import uuid1
+from uuid import UUID, uuid1
 
 import prometheus_client
 from psycopg_pool import AsyncConnectionPool
@@ -78,6 +78,27 @@ async def place_order(request):
         return JSONResponse({"job_id": str(job_id)})
 
 
+async def message(request):
+    body = await request.json()
+    blocking_job_id = None
+    if "parent_id" in body:
+        blocking_job_id = UUID(body["parent_id"])
+    async with request.state.pool.connection() as conn:
+        client = Client(conn)
+        job = JobDescription(
+            owner_id,
+            "message",
+            {"message": body["message"]},
+            1,
+            timedelta(minutes=1),
+            None,
+            blocking_job_id,
+            None,
+        )
+        job_id = await client.enqueue(job)
+        return JSONResponse({"job_id": str(job_id)})
+
+
 prometheus_metrics_app = prometheus_client.make_asgi_app()
 
 
@@ -88,6 +109,7 @@ app = Starlette(
         Mount("/metrics", app=prometheus_metrics_app),
         Route("/register", register, methods=["POST"]),
         Route("/place_order", place_order, methods=["POST"]),
+        Route("/message", message, methods=["POST"]),
     ],
     middleware = [
         Middleware(PrometheusMiddleware),
