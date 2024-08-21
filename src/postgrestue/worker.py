@@ -342,7 +342,7 @@ async def main(args):
     logging.basicConfig(level=logging.DEBUG)
 
     # For Prometheus, try ascending port numbers until one is available.
-    port = 8001
+    port = 8005
     while True:
         try:
             prometheus_client.start_http_server(port)
