@@ -14,7 +14,7 @@ from prometheus_client import Counter, Histogram
 import psycopg
 from psycopg.rows import class_row
 
-from .common import get_connection
+from .common import get_connection, retry_serialization_failures
 
 
 logger = logging.getLogger(__name__)
@@ -61,84 +61,88 @@ class Client:
     async def enqueue(self, job: JobDescription) -> UUID:
         validate(job)
         logger.info("Enqueuing %s", job)
+        create_time = datetime.now(timezone.utc)
+        job_id = uuid1()
         with jobs_enqueue_times.time():
-            async with self.conn.transaction():
-                async with self.conn.cursor() as cur:
-                    job_id = uuid1()
-                    create_time = datetime.now(timezone.utc)
+            await self._enqueue(job, job_id, create_time)
+        jobs_enqueued.labels(job.kind).inc()
+        return job_id
+
+    @retry_serialization_failures
+    async def _enqueue(self, job, job_id, create_time):
+        async with self.conn.transaction():
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO job (
+                        id,
+                        owner_id,
+                        kind,
+                        max_attempts,
+                        timeout,
+                        create_time,
+                        schedule_time,
+                        blocking_job_id,
+                        queue,
+                        arguments
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    params=(
+                        job_id,
+                        job.owner_id,
+                        job.kind,
+                        job.max_attempts,
+                        job.timeout,
+                        create_time,
+                        job.schedule_time,
+                        job.blocking_job_id,
+                        job.queue,
+                        json.dumps(job.arguments),
+                    )
+                )
+                # Figure out what sort of bookkeeping steps need to be done to get the job running.
+                if job.schedule_time:
                     await cur.execute(
                         """
-                        INSERT INTO job (
-                            id,
-                            owner_id,
-                            kind,
-                            max_attempts,
-                            timeout,
-                            create_time,
-                            schedule_time,
-                            blocking_job_id,
-                            queue,
-                            arguments
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO scheduled_job (job_id, schedule_time) VALUES (%s, %s)
                         """,
-                        params=(
-                            job_id,
-                            job.owner_id,
-                            job.kind,
-                            job.max_attempts,
-                            job.timeout,
-                            create_time,
-                            job.schedule_time,
-                            job.blocking_job_id,
-                            job.queue,
-                            json.dumps(job.arguments),
-                        )
+                        params=(job_id, job.schedule_time)
                     )
-                    # Figure out what sort of bookkeeping steps need to be done to get the job running.
-                    if job.schedule_time:
-                        await cur.execute(
-                            """
-                            INSERT INTO scheduled_job (job_id, schedule_time) VALUES (%s, %s)
-                            """,
-                            params=(job_id, job.schedule_time)
-                        )
-                    elif job.blocking_job_id:
-                        await cur.execute(
-                            """
-                            INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
-                            """,
-                            params=(job_id, job.blocking_job_id)
-                        )
-                    elif job.queue:
-                        # Keep track of this job's position relative to others in the same queue by
-                        # storing it in queued_job until it is finished.
-                        await cur.execute(
-                            """
-                            INSERT INTO queued_job (queue, job_id) VALUES (%s, %s)
-                            """,
-                            params=(job.queue, job_id)
-                        )
-                        # Opportunistically try to put it in running_job. If there is another job
-                        # from the same queue in there, this will do nothing.
-                        await cur.execute(
-                            """
-                            INSERT INTO running_job (job_id, attempt, state, queue)
-                            VALUES (%s, 1, 'ENQUEUED', %s)
-                            ON CONFLICT (queue) DO NOTHING
-                            """,
-                            params=(job_id, job.queue)
-                        )
-                    else:
-                        await cur.execute(
-                            """
-                            INSERT INTO running_job (job_id, attempt, state)
-                            VALUES (%s, 1, 'ENQUEUED')
-                            """,
-                            params=(job_id,)
-                        )
-                    jobs_enqueued.labels(job.kind).inc()
-                    return job_id
-
+                elif job.blocking_job_id:
+                    await cur.execute(
+                        """
+                        INSERT INTO blocked_job (job_id, blocking_job_id) VALUES (%s, %s)
+                        """,
+                        params=(job_id, job.blocking_job_id)
+                    )
+                elif job.queue:
+                    # Keep track of this job's position relative to others in the same queue by
+                    # storing it in queued_job until it is finished.
+                    await cur.execute(
+                        """
+                        INSERT INTO queued_job (queue, job_id) VALUES (%s, %s)
+                        """,
+                        params=(job.queue, job_id)
+                    )
+                    # Opportunistically try to put it in running_job. If there is another job
+                    # from the same queue in there, this will do nothing.
+                    await cur.execute(
+                        """
+                        INSERT INTO running_job (job_id, attempt, state, queue)
+                        VALUES (%s, 1, 'ENQUEUED', %s)
+                        ON CONFLICT (queue) DO NOTHING
+                        """,
+                        params=(job_id, job.queue)
+                    )
+                else:
+                    await cur.execute(
+                        """
+                        INSERT INTO running_job (job_id, attempt, state)
+                        VALUES (%s, 1, 'ENQUEUED')
+                        """,
+                        params=(job_id,)
+                    )
+ 
 
 async def main(args):
     logging.basicConfig(level=logging.DEBUG)

@@ -7,8 +7,9 @@ import sys
 
 import prometheus_client
 from prometheus_client import Counter, Histogram
+import psycopg
 
-from .common import get_connection
+from .common import get_connection, retry_serialization_failures
 
 
 logger = logging.getLogger(__name__)
@@ -37,26 +38,31 @@ class Scheduler:
         self.conn = conn
 
     async def process_ready_jobs(self):
+        now = datetime.now(timezone.utc)
         with scheduler_run_times.time():
-            now = datetime.now(timezone.utc)
-            async with self.conn.transaction():
-                async with self.conn.cursor() as cur:
-                    await cur.execute(
-                        """
-                        DELETE FROM scheduled_job WHERE schedule_time <= %s RETURNING job_id
-                        """,
-                        params=(now,)
-                    )
-                    scheduled_jobs = await cur.fetchmany()
-                    await cur.executemany(
-                        """
-                        INSERT INTO running_job (job_id, attempt, state) VALUES (%s, 1, 'ENQUEUED')
-                        """,
-                        params_seq=scheduled_jobs
-                    )
-                    logger.info("Marked %s jobs as ready to run", len(scheduled_jobs))
-                    scheduler_runs.inc()
-                    scheduler_jobs_processed.inc(len(scheduled_jobs))
+            scheduled_job_count = await self._process_ready_jobs(now)
+            logger.info("Marked %s jobs as ready to run", scheduled_job_count)
+            scheduler_runs.inc()
+            scheduler_jobs_processed.inc(scheduled_job_count)
+
+    @retry_serialization_failures
+    async def _process_ready_jobs(self, now):
+        async with self.conn.transaction():
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM scheduled_job WHERE schedule_time <= %s RETURNING job_id
+                    """,
+                    params=(now,)
+                )
+                scheduled_jobs = await cur.fetchmany()
+                await cur.executemany(
+                    """
+                    INSERT INTO running_job (job_id, attempt, state) VALUES (%s, 1, 'ENQUEUED')
+                    """,
+                    params_seq=scheduled_jobs
+                )
+                return len(scheduled_jobs)
 
     async def run(self):
         logger.info("Starting scheduler...")
@@ -72,6 +78,7 @@ async def main(args):
     logger.info("Prometheus metrics are available at http://localhost:8002/")
 
     async with await get_connection() as conn:
+        await conn.set_isolation_level(psycopg.IsolationLevel.SERIALIZABLE)
         await Scheduler(conn).run()
 
 
