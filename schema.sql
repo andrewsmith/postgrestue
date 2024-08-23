@@ -106,7 +106,7 @@ CREATE TABLE running_job (
   PRIMARY KEY (job_id, attempt),
   CHECK (attempt > 0),
   CHECK (worker_id IS NULL OR (state <> 'ENQUEUED' AND start_time IS NOT NULL))
-);
+) WITH (fillfactor = 50);
 
 -- Finished job attempts are placed in this table, providing a "receipt" for the job.
 -- This can be periodically cleaned up by dropping partitions.
