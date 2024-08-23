@@ -193,6 +193,7 @@ class Worker:
                     WHERE
                       rj.state = 'ENQUEUED'
                     LIMIT 1
+                    FOR UPDATE OF rj SKIP LOCKED
                     """
                 )
                 job = await cur.fetchone()
