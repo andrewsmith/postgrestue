@@ -85,7 +85,6 @@ async def main(args):
     logger.info("Prometheus metrics are available at http://localhost:8003/")
 
     async with await get_connection() as conn:
-        await conn.set_isolation_level(psycopg.IsolationLevel.SERIALIZABLE)
         await Unblocker(conn).run()
 
 

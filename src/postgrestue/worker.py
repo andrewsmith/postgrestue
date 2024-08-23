@@ -395,7 +395,6 @@ async def main(args):
             break
 
     async with await get_connection() as conn:
-        await conn.set_isolation_level(psycopg.IsolationLevel.SERIALIZABLE)
         await Worker(conn, sample_functions).run()
 
 

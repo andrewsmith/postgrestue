@@ -28,15 +28,7 @@ owner_id = uuid1()
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
-    async def configure_connection(conn):
-        await conn.set_isolation_level(psycopg.IsolationLevel.SERIALIZABLE)
-
-    async with AsyncConnectionPool(
-        DATABASE_URL,
-        min_size=1,
-        max_size=10,
-        configure=configure_connection,
-    ) as pool:
+    async with AsyncConnectionPool(DATABASE_URL, min_size=1, max_size=10) as pool:
         yield {"pool": pool}
 
 
