@@ -9,6 +9,7 @@ import functools
 import inspect
 import json
 import logging
+import os
 import socket
 import sys
 from typing import Optional
@@ -106,11 +107,11 @@ class BookkeepingStats:
 
 
 class Worker:
-    def __init__(self, conn, functions, hostname=None, worker_id=None, executor=None):
+    def __init__(self, conn, functions, name=None, worker_id=None, executor=None):
         self.conn = conn
         self.functions = functions
         self.worker_id = worker_id or uuid1()
-        self.hostname = hostname or socket.getfqdn()
+        self.name = name or socket.getfqdn()
         self.executor = executor
         self.ping_frequency = timedelta(seconds=5)
         self.last_ping = None
@@ -338,7 +339,7 @@ class Worker:
                     %s, %s, current_timestamp, current_timestamp
                 )
                 """,
-                params=(self.worker_id, self.hostname)
+                params=(self.worker_id, self.name)
             )
 
     async def deregister(self):
@@ -352,7 +353,7 @@ class Worker:
             )
 
     async def run(self):
-        logger.info("Starting worker %s on %s...", self.worker_id, self.hostname)
+        logger.info("Starting worker %s (%s)...", self.name, self.worker_id)
         await self.register()
         try:
             await self.process_jobs()
@@ -400,16 +401,22 @@ async def main(args):
         else:
             break
 
+    hostname = socket.getfqdn()
+    pid = os.getpid()
+
     workers = 4
     executor = ThreadPoolExecutor(max_workers=workers)
 
     async with asyncio.TaskGroup() as group:
         for i in range(workers):
             conn = await get_connection()
-            group.create_task(
-                Worker(conn, sample_functions, executor=executor).run(),
-                name=f"worker-{i}",
+            worker = Worker(
+                conn,
+                sample_functions,
+                name=f"{hostname}-{pid}-{i}",
+                executor=executor,
             )
+            group.create_task(worker.run(), name=f"worker-{i}")
 
 
 if __name__ == "__main__":
