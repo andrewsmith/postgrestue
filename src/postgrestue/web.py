@@ -99,6 +99,24 @@ async def message(request):
         return JSONResponse({"job_id": str(job_id)})
 
 
+async def sleep(request):
+    body = await request.json()
+    async with request.state.pool.connection() as conn:
+        client = Client(conn)
+        job = JobDescription(
+            owner_id,
+            "sleep",
+            {"seconds": body["seconds"]},
+            1,
+            timedelta(minutes=1),
+            None,
+            None,
+            None,
+        )
+        job_id = await client.enqueue(job)
+        return JSONResponse({"job_id": str(job_id)})
+
+
 prometheus_metrics_app = prometheus_client.make_asgi_app()
 
 
@@ -110,6 +128,7 @@ app = Starlette(
         Route("/register", register, methods=["POST"]),
         Route("/place_order", place_order, methods=["POST"]),
         Route("/message", message, methods=["POST"]),
+        Route("/sleep", sleep, methods=["POST"]),
     ],
     middleware = [
         Middleware(PrometheusMiddleware),

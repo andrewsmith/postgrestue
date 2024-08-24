@@ -377,6 +377,8 @@ class Worker:
 
 
 async def main(args):
+    import time
+
     def send_welcome_email(**kwargs):
         logger.info("Calling send_welcome_email")
 
@@ -386,10 +388,16 @@ async def main(args):
     def message(*, message=None):
         logger.info("Message is: %s", message)
 
+    def sleep(*, seconds=None):
+        logger.info("Sleeping for %s seconds", seconds)
+        time.sleep(seconds)
+        logger.info("Slept for %s seconds", seconds)
+
     sample_functions = dict(
         send_welcome_email=send_welcome_email,
         place_order=place_order,
         message=message,
+        sleep=sleep,
     )
 
     logging.basicConfig(level=logging.DEBUG)
