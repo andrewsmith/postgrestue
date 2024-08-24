@@ -153,7 +153,8 @@ class Worker:
         jobs_dequeued.labels(job.kind).inc()
         try:
             logger.info("Invoking %s", job)
-            await self._invoke(job)
+            async with asyncio.timeout(job.timeout.total_seconds()):
+                await self._invoke(job)
             job.mark_finished()
         except Exception as e:
             job.mark_finished()
