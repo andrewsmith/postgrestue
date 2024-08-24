@@ -99,18 +99,6 @@ class Job:
         self.finish_time = now()
 
 
-async def duplicate_connection(conn: psycopg.AsyncConnection) -> psycopg.AsyncConnection:
-    """Create a new connection based on an open one."""
-    return await psycopg.AsyncConnection.connect(
-        conn.info.dsn,
-        password=conn.info.password,
-        autocommit=conn.autocommit,
-        row_factory=conn.row_factory,
-        cursor_factory=conn.cursor_factory,
-        prepare_threshold=conn.prepare_threshold,
-    )
-
-
 class BookkeepingStats:
     """Track how many jobs were updated as part of finishing this one."""
     jobs_unblocked: int = 0
@@ -124,27 +112,25 @@ class Worker:
         self.worker_id = worker_id or uuid1()
         self.hostname = hostname or socket.getfqdn()
         self.executor = executor
-        self.ping_frequency_seconds = 5
-        self.ping_activity = False
+        self.ping_frequency = timedelta(seconds=5)
+        self.last_ping = None
 
-    async def send_periodic_pings(self):
-        async with await duplicate_connection(self.conn) as conn:
-            while True:
-                if self.ping_activity:
-                    self.ping_activity = False
-                    async with conn.cursor() as cur:
-                        logger.debug("Sending an activity ping")
-                        await cur.execute(
-                            """
-                            UPDATE worker SET last_ping_time = %s WHERE id = %s
-                            """,
-                            params=(now(), self.worker_id)
-                        )
-                await asyncio.sleep(self.ping_frequency_seconds)
+    async def send_ping(self):
+        ping_now = now()
+        if not self.last_ping or self.last_ping + self.ping_frequency <= ping_now:
+            async with self.conn.cursor() as cur:
+                logger.debug("Sending an activity ping")
+                await cur.execute(
+                    """
+                    UPDATE worker SET last_ping_time = %s WHERE id = %s
+                    """,
+                    params=(ping_now, self.worker_id)
+                )
+            self.last_ping = ping_now
 
     async def process_one_job(self):
         logger.debug("Looking for a job to process")
-        self.ping_activity = True
+        await self.send_ping()
         with jobs_dequeue_times.time():
             job = await self._dequeue()
             if not job:
@@ -369,9 +355,7 @@ class Worker:
         logger.info("Starting worker %s on %s...", self.worker_id, self.hostname)
         await self.register()
         try:
-            async with asyncio.TaskGroup() as group:
-                group.create_task(self.send_periodic_pings())
-                group.create_task(self.process_jobs())
+            await self.process_jobs()
         finally:
             await self.deregister()
 
