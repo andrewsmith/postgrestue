@@ -1,9 +1,12 @@
 """An example implementation of a worker that uses the postgrestue schema."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import errno
+import functools
+import inspect
 import json
 import logging
 import socket
@@ -115,11 +118,12 @@ class BookkeepingStats:
 
 
 class Worker:
-    def __init__(self, conn, functions, hostname=None, worker_id=None):
+    def __init__(self, conn, functions, hostname=None, worker_id=None, executor=None):
         self.conn = conn
         self.functions = functions
         self.worker_id = worker_id or uuid1()
         self.hostname = hostname or socket.getfqdn()
+        self.executor = executor
         self.ping_frequency_seconds = 5
         self.ping_activity = False
 
@@ -149,7 +153,7 @@ class Worker:
         jobs_dequeued.labels(job.kind).inc()
         try:
             logger.info("Invoking %s", job)
-            self._invoke(job)
+            await self._invoke(job)
             job.mark_finished()
         except Exception as e:
             job.mark_finished()
@@ -215,13 +219,22 @@ class Worker:
                 )
                 return job
 
-    def _invoke(self, job):
+    async def _invoke(self, job):
         try:
             function = getattr(self.functions, job.kind)
         except AttributeError:
             function = self.functions[job.kind]
+
         with jobs_invocation_times.time():
-            function(**job.arguments)
+            if inspect.iscoroutinefunction(function):
+                await function(**job.arguments)
+            else:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    self.executor,
+                    functools.partial(function, **job.arguments),
+                )
+
 
     @retry_serialization_failures
     async def _report_failure_and_maybe_retry(self, job):
@@ -394,8 +407,10 @@ async def main(args):
         else:
             break
 
+    executor = ThreadPoolExecutor()
+
     async with await get_connection() as conn:
-        await Worker(conn, sample_functions).run()
+        await Worker(conn, sample_functions, executor=executor).run()
 
 
 if __name__ == "__main__":
