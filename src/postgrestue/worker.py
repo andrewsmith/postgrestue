@@ -400,10 +400,16 @@ async def main(args):
         else:
             break
 
-    executor = ThreadPoolExecutor()
+    workers = 4
+    executor = ThreadPoolExecutor(max_workers=workers)
 
-    async with await get_connection() as conn:
-        await Worker(conn, sample_functions, executor=executor).run()
+    async with asyncio.TaskGroup() as group:
+        for i in range(workers):
+            conn = await get_connection()
+            group.create_task(
+                Worker(conn, sample_functions, executor=executor).run(),
+                name=f"worker-{i}",
+            )
 
 
 if __name__ == "__main__":
