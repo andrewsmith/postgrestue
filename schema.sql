@@ -39,7 +39,10 @@ CREATE TABLE job (
   -- limitation makes for more predictability and I don't think this is a problem in
   -- practice.
   CHECK (queue IS NULL OR blocking_job_id IS NULL)
-);
+) PARTITION BY HASH (id);
+
+-- Create a default partition for local development.
+CREATE TABLE job_default PARTITION OF job FOR VALUES WITH (MODULUS 1, REMAINDER 0);
 
 CREATE TABLE worker (
   id             uuid PRIMARY KEY,
