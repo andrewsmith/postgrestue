@@ -128,11 +128,4 @@ CREATE TABLE finished_job (
 -- Create a default partition for local development.
 CREATE TABLE finished_job_default PARTITION OF finished_job DEFAULT;
 
--- Here's an example partition.
-CREATE TABLE successful_job_20240718 PARTITION OF finished_job FOR VALUES FROM ('SUCCEEDED', '2024-07-18') TO ('SUCCEEDED', '2024-07-19');
-
--- It has an index on job_id to make lookups more efficient.
-CREATE INDEX ON successful_job_20240718 (job_id);
-
-CREATE TABLE successful_job_20240719 PARTITION OF finished_job FOR VALUES FROM ('SUCCEEDED', '2024-07-19') TO ('SUCCEEDED', '2024-07-20');
-CREATE INDEX ON successful_job_20240719 (job_id);
+CREATE INDEX ON finished_job_default (job_id);
